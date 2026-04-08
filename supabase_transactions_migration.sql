@@ -20,11 +20,18 @@ CREATE INDEX IF NOT EXISTS idx_transactions_seller_id ON public.transactions(sel
 -- 2. RLS
 ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users can see transactions where they are buyer or seller" ON public.transactions
-  FOR SELECT USING (auth.uid() = buyer_id OR auth.uid() = seller_id);
-
-CREATE POLICY "System can insert transactions" ON public.transactions
-  FOR INSERT WITH CHECK (true);
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can see transactions where they are buyer or seller' AND tablename = 'transactions') THEN
+        CREATE POLICY "Users can see transactions where they are buyer or seller" ON public.transactions
+          FOR SELECT USING (auth.uid() = buyer_id OR auth.uid() = seller_id);
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'System can insert transactions' AND tablename = 'transactions') THEN
+        CREATE POLICY "System can insert transactions" ON public.transactions
+          FOR INSERT WITH CHECK (true);
+    END IF;
+END $$;
 
 -- 3. Enable Realtime
 ALTER PUBLICATION supabase_realtime ADD TABLE public.transactions;
