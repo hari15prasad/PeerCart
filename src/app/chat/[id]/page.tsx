@@ -6,7 +6,8 @@ import { createClient } from "@/lib/supabase/client";
 import { Navbar } from "@/components/shared/navbar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Send, Image as ImageIcon, Mic, MicOff, Loader2, Play, Pause, Star } from "lucide-react";
+import { ArrowLeft, Send, Image as ImageIcon, Mic, MicOff, Loader2, Play, Pause, Star, CheckCircle2 } from "lucide-react";
+
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 
@@ -98,9 +99,27 @@ export default function ChatPage() {
         .order("created_at", { ascending: true });
 
       if (msgs) setMessages(msgs);
+
+      // Mark messages as read for this user
+      if (user.id) {
+          const { data: convUpdate } = await supabase
+            .from("conversations")
+            .select("buyer_id, seller_id")
+            .eq("id", id)
+            .single();
+          
+          if (convUpdate) {
+              const columnToReset = user.id === convUpdate.buyer_id ? 'unread_count_buyer' : 'unread_count_seller';
+              await supabase
+                .from("conversations")
+                .update({ [columnToReset]: 0 })
+                .eq("id", id);
+          }
+      }
     }
     init();
   }, [id]);
+
 
   // Real-time subscription
   useEffect(() => {
@@ -246,60 +265,140 @@ export default function ChatPage() {
   const initials = (u: Participant) =>
     u.full_name?.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2) ?? u.email.slice(0, 2).toUpperCase();
 
+  const getStatusBadge = () => {
+    switch (interestStatus) {
+      case 'Confirmed': return <Badge className="bg-emerald-500 text-white border-none text-[10px] px-2 py-0.5 font-bold shadow-sm animate-in fade-in zoom-in">ITEM SOLD</Badge>;
+      case 'Cancelled': return <Badge className="bg-slate-500 text-white border-none text-[10px] px-2 py-0.5 font-bold shadow-sm">DEAL CANCELLED</Badge>;
+      case 'Pending': return <Badge className="bg-amber-500 text-white border-none text-[10px] px-2 py-0.5 font-bold shadow-sm animate-pulse">OFFER PENDING</Badge>;
+      default: return null;
+    }
+  };
+
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 flex flex-col">
       <Navbar />
 
-      {/* Chat Header */}
-      <div className="sticky top-16 z-40 bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 px-4 py-3 flex items-center gap-3">
-        <button onClick={() => router.push("/chats")} className="p-1 rounded-full hover:bg-slate-100 dark:hover:bg-zinc-800 flex-shrink-0">
-          <ArrowLeft className="h-5 w-5 text-slate-600 dark:text-zinc-400" />
-        </button>
-        {otherUser && (
-          <Avatar className="h-9 w-9 flex-shrink-0">
-            <AvatarFallback className="bg-blue-600 text-white font-bold text-xs">
-              {initials(otherUser)}
-            </AvatarFallback>
-          </Avatar>
-        )}
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <p className="font-semibold text-slate-900 dark:text-white text-sm truncate">
-              {otherUser?.full_name || otherUser?.email}
-            </p>
-            {otherUser?.trust_score !== undefined && otherUser.trust_score > 0 && (
-              <span className="text-[10px] font-bold text-amber-600 bg-amber-50 dark:text-amber-400 dark:bg-amber-950/30 px-1.5 py-0.5 rounded-full flex items-center gap-0.5 flex-shrink-0">
-                <Star className="h-2.5 w-2.5 fill-current" /> {otherUser.trust_score}
-              </span>
+      <div className="sticky top-16 z-40 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border-b border-slate-200 dark:border-zinc-800 px-4 py-3">
+        <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <button onClick={() => router.push("/chats")} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-zinc-800 flex-shrink-0 transition-colors">
+              <ArrowLeft className="h-5 w-5 text-slate-600 dark:text-zinc-400" />
+            </button>
+            {otherUser && (
+              <div className="relative">
+                <Avatar className="h-10 w-10 flex-shrink-0 border-2 border-white dark:border-zinc-800 shadow-sm">
+                  <AvatarFallback className="bg-gradient-to-br from-blue-500 to-blue-700 text-white font-black text-sm">
+                    {initials(otherUser)}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="absolute -bottom-0.5 -right-0.5 h-3 w-3 bg-emerald-500 border-2 border-white dark:border-zinc-900 rounded-full" />
+              </div>
             )}
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <p className="font-bold text-slate-900 dark:text-white text-sm truncate leading-none">
+                  {otherUser?.full_name || otherUser?.email}
+                </p>
+                {otherUser?.trust_score !== undefined && otherUser.trust_score > 0 && (
+                  <span className="text-[10px] font-black text-amber-600 bg-amber-50 dark:text-amber-400 dark:bg-amber-950/30 px-1.5 py-0.5 rounded-full flex items-center gap-0.5 flex-shrink-0">
+                    <Star className="h-2.5 w-2.5 fill-current" /> {otherUser.trust_score}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2 mt-1 min-w-0">
+                 <p className="text-[11px] text-slate-500 dark:text-zinc-400 truncate font-medium">re: <span className="text-slate-900 dark:text-zinc-200">{listingTitle}</span></p>
+                 {getStatusBadge()}
+              </div>
+            </div>
           </div>
-          <div className="flex items-center gap-1.5 mt-0.5">
-            <p className="text-xs text-slate-500 dark:text-zinc-400 truncate max-w-[150px] sm:max-w-xs">re: {listingTitle}</p>
-            {interestStatus === 'Pending' && <Badge className="bg-amber-500 hover:bg-amber-600 text-white border-none text-[8px] h-3 px-1 leading-none">IN PROGRESS</Badge>}
-            {interestStatus === 'Confirmed' && <Badge className="bg-emerald-500 hover:bg-emerald-600 text-white border-none text-[8px] h-3 px-1 leading-none">SOLD</Badge>}
-            {interestStatus === 'Cancelled' && <Badge className="bg-slate-500 hover:bg-slate-600 text-white border-none text-[8px] h-3 px-1 leading-none">CANCELLED</Badge>}
+
+          <div className="flex items-center gap-2 shrink-0">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="text-[11px] h-8 px-3 rounded-full gap-1.5 border-slate-200 dark:border-zinc-700 hover:bg-slate-50 dark:hover:bg-zinc-800 shadow-sm transition-all active:scale-95"
+              onClick={() => setIsRatingOpen(true)}
+            >
+              <Star className="h-3.5 w-3.5 text-amber-500" /> <span className="hidden sm:inline font-bold">Rate Experience</span>
+              <span className="sm:hidden font-bold">Rate</span>
+            </Button>
           </div>
         </div>
-        <div className="ml-auto pl-2 flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
-          {interestStatus === 'Pending' && isBuyer && (
-             <Button variant="outline" size="sm" onClick={() => handleOrderAction('CANCEL_PURCHASE')} disabled={isManagingOrder} className="text-[10px] h-7 px-2 border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30">Cancel</Button>
-          )}
-          {interestStatus === 'Pending' && !isBuyer && (
-             <>
-               <Button variant="outline" size="sm" onClick={() => handleOrderAction('CONFIRM_SALE')} disabled={isManagingOrder} className="text-[10px] h-7 px-2 border-emerald-200 dark:border-emerald-900/50 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30">Confirm</Button>
-               <Button variant="outline" size="sm" onClick={() => handleOrderAction('REJECT_SALE')} disabled={isManagingOrder} className="text-[10px] h-7 px-2 border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30">Reject</Button>
-             </>
-          )}
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="text-[10px] sm:text-xs h-7 px-2 rounded-xl gap-1.5 border-slate-200 dark:border-zinc-700"
-            onClick={() => setIsRatingOpen(true)}
-          >
-            <Star className="h-3 w-3 sm:h-3.5 sm:w-3.5" /> <span className="hidden sm:inline">Rate</span>
-          </Button>
-        </div>
+
+        {/* DECISION ACTION BAR (Only for Seller if Pending) */}
+        {interestStatus === 'Pending' && !isBuyer && (
+          <div className="max-w-4xl mx-auto mt-3 pt-3 border-t border-slate-100 dark:border-zinc-800/50 flex flex-col sm:flex-row items-center justify-between gap-3 animate-in slide-in-from-top-2 duration-300">
+            <div className="text-[11px] text-slate-500 dark:text-zinc-400 font-medium bg-slate-50 dark:bg-zinc-950/50 px-3 py-1.5 rounded-lg border border-slate-100 dark:border-zinc-800">
+               Confirm the sale once you agree on a meetup!
+            </div>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <Button 
+                onClick={() => {
+                  if (confirm("Confirming this sale will mark the item as SOLD and generate a digital receipt. Continue?")) {
+                    handleOrderAction('CONFIRM_SALE');
+                  }
+                }} 
+                disabled={isManagingOrder} 
+                className="flex-1 sm:flex-none h-9 px-6 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
+              >
+                {isManagingOrder ? <Loader2 className="h-4 w-4 animate-spin" /> : "Accept Deal ✅"}
+              </Button>
+              <Button 
+                variant="outline"
+                onClick={() => {
+                  if (confirm("Are you sure you want to deny this deal? The buyer will be notified.")) {
+                    handleOrderAction('REJECT_SALE');
+                  }
+                }} 
+                disabled={isManagingOrder} 
+                className="flex-1 sm:flex-none h-9 px-6 border-red-200 dark:border-red-900/40 text-red-600 dark:text-red-400 font-bold rounded-xl hover:bg-red-50 dark:hover:bg-red-950/30 transition-all active:scale-95"
+              >
+                {isManagingOrder ? <Loader2 className="h-4 w-4 animate-spin" /> : "Deny Deal ✕"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* CANCELLATION BAR (Only for Buyer if Pending) */}
+        {interestStatus === 'Pending' && isBuyer && (
+          <div className="max-w-4xl mx-auto mt-3 pt-3 border-t border-slate-100 dark:border-zinc-800/50 flex items-center justify-between gap-3 animate-in slide-in-from-top-2 duration-300">
+             <div className="text-[11px] text-slate-500 dark:text-zinc-400 font-medium">Waiting for seller to confirm...</div>
+             <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => {
+                  if (confirm("Are you sure you want to cancel your purchase request?")) {
+                    handleOrderAction('CANCEL_PURCHASE');
+                  }
+                }} 
+                disabled={isManagingOrder} 
+                className="text-[11px] h-8 px-3 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 font-bold rounded-full transition-all"
+              >
+                Cancel Request
+             </Button>
+          </div>
+        )}
+
+        {/* SUCCESS BAR (If Confirmed) */}
+        {interestStatus === 'Confirmed' && (
+           <div className="max-w-4xl mx-auto mt-3 pt-3 border-t border-slate-100 dark:border-zinc-800/40 flex items-center justify-between gap-3 text-emerald-600 dark:text-emerald-400 font-bold text-xs">
+              <div className="flex items-center gap-2">
+                 <CheckCircle2 className="h-4 w-4 shrink-0" />
+                 Transaction Completed
+              </div>
+              <Button 
+                size="sm" 
+                variant="link" 
+                onClick={() => router.push('/transactions')}
+                className="text-emerald-600 dark:text-emerald-400 font-black h-auto p-0"
+              >
+                View Bill →
+              </Button>
+           </div>
+        )}
       </div>
+
 
       {/* RATING MODAL */}
       {isRatingOpen && (

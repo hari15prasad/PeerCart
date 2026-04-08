@@ -30,6 +30,7 @@ type AppNotification = {
 export function Navbar() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [unreadMessages, setUnreadMessages] = useState(0);
   const [notifOpen, setNotifOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const { resolvedTheme, setTheme } = useTheme();
@@ -40,7 +41,8 @@ export function Navbar() {
   const myListingIds = useRef<Set<string>>(new Set());
   const currentUserId = useRef<string | null>(null);
 
-  const unreadCount = notifications.filter(n => !n.is_read).length;
+  const unreadNotifCount = notifications.filter(n => !n.is_read).length;
+
 
   useEffect(() => {
     async function load() {
@@ -70,37 +72,59 @@ export function Navbar() {
       if (myListings?.length) {
         myListingIds.current = new Set(myListings.map((l: any) => l.id));
       }
+
+      // Load unread message counts
+      fetchUnreadMessages(user.id);
+    }
+
+    async function fetchUnreadMessages(uid: string) {
+      const { data: convs } = await supabase
+        .from("conversations")
+        .select("buyer_id, seller_id, unread_count_buyer, unread_count_seller")
+        .or(`buyer_id.eq.${uid},seller_id.eq.${uid}`);
+      
+      if (convs) {
+        const total = convs.reduce((acc, conv) => {
+          return acc + (uid === conv.buyer_id ? conv.unread_count_buyer : conv.unread_count_seller);
+        }, 0);
+        setUnreadMessages(total);
+      }
     }
 
     load();
 
-    // Realtime: subscribe to new notifications for this user
-    const channel = supabase
+    // Realtime: subscribe to notifications
+    const channelNotif = supabase
       .channel("navbar-notifications")
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "notifications" },
         (payload) => {
-          const notif = payload.new as AppNotification;
-          // Only add if it's for the current user
-          if (notif.user_id === currentUserId.current || true) {
-            // Re-fetch to get accurate data (filter happens server-side via RLS)
-            supabase
-              .from("notifications")
-              .select("*")
-              .eq("user_id", currentUserId.current!)
-              .order("created_at", { ascending: false })
-              .limit(20)
-              .then(({ data }) => {
-                if (data) setNotifications(data as AppNotification[]);
-              });
+          if (payload.new.user_id === currentUserId.current) {
+            setNotifications(prev => [payload.new as AppNotification, ...prev].slice(0, 20));
           }
         }
       )
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    // Realtime: subscribe to conversations for message badges
+    const channelChat = supabase
+      .channel("navbar-chats")
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "conversations" },
+        () => {
+          if (currentUserId.current) fetchUnreadMessages(currentUserId.current);
+        }
+      )
+      .subscribe();
+
+    return () => { 
+      supabase.removeChannel(channelNotif); 
+      supabase.removeChannel(channelChat); 
+    };
   }, [supabase]);
+
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -123,7 +147,7 @@ export function Navbar() {
   }
 
   async function markAllRead() {
-    if (!currentUserId.current || unreadCount === 0) return;
+    if (!currentUserId.current || unreadNotifCount === 0) return;
     setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
     await supabase
       .from("notifications")
@@ -131,6 +155,7 @@ export function Navbar() {
       .eq("user_id", currentUserId.current)
       .eq("is_read", false);
   }
+
 
   function handleNotifClick(notif: AppNotification) {
     setNotifOpen(false);
@@ -186,8 +211,13 @@ export function Navbar() {
               <Trophy className="h-5 w-5 text-amber-500 dark:text-amber-400" />
             </Link>
 
-            <Link href="/chats" className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors" title="Messages">
+            <Link href="/chats" className="relative p-2 rounded-full hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors" title="Messages">
               <MessageCircle className="h-5 w-5 text-slate-500 dark:text-zinc-400" />
+              {unreadMessages > 0 && (
+                <span className="absolute top-1 right-1 h-4 w-4 bg-blue-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-white dark:border-zinc-950">
+                  {unreadMessages > 9 ? "9+" : unreadMessages}
+                </span>
+              )}
             </Link>
 
             {/* Notification Bell with Dropdown */}
@@ -198,23 +228,25 @@ export function Navbar() {
                 title="Notifications"
               >
                 <Bell className="h-5 w-5 text-slate-500 dark:text-zinc-400" />
-                {unreadCount > 0 && (
-                  <span className="absolute top-1 right-1 h-4 w-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center animate-pulse">
-                    {unreadCount > 9 ? "9+" : unreadCount}
+                {unreadNotifCount > 0 && (
+                  <span className="absolute top-1 right-1 h-4 w-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-white dark:border-zinc-950">
+                    {unreadNotifCount > 9 ? "9+" : unreadNotifCount}
                   </span>
                 )}
               </button>
+
 
               {notifOpen && (
                 <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl shadow-2xl overflow-hidden z-50">
                   <div className="px-4 py-3 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between">
                     <p className="font-bold text-slate-900 dark:text-white text-sm">Notifications</p>
-                    {unreadCount > 0 && (
+                    {unreadNotifCount > 0 && (
                       <button onClick={markAllRead} className="flex items-center gap-1 text-[11px] text-blue-500 font-semibold hover:underline">
                         <CheckCheck className="h-3 w-3" /> Mark all read
                       </button>
                     )}
                   </div>
+
 
                   <div className="max-h-80 overflow-y-auto divide-y divide-slate-100 dark:divide-zinc-800">
                     {notifications.length === 0 ? (
