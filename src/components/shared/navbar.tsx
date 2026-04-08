@@ -140,10 +140,12 @@ export function Navbar() {
       supabase.from("notifications").update({ is_read: true }).eq("id", notif.id);
     }
     // Navigate to conversation or my listings
-    if (notif.conversation_id) {
+    if (notif.conversation_id && notif.type !== 'deal_accepted') {
       router.push(`/chat/${notif.conversation_id}`);
     } else if (notif.type === 'new_request') {
       router.push("/my-listings");
+    } else if (notif.type === 'deal_accepted' || notif.type === 'deal_rejected' || notif.type === 'deal_cancelled') {
+      router.push("/deals");
     }
   }
 
@@ -291,6 +293,11 @@ export function Navbar() {
                     <button onClick={() => { setDropdownOpen(false); router.push("/my-listings"); }}
                       className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors">
                       <PackageSearch className="h-4 w-4" /> My Listings
+                    </button>
+
+                    <button onClick={() => { setDropdownOpen(false); router.push("/deals"); }}
+                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors">
+                      <ShoppingBag className="h-4 w-4" /> My Offers
                     </button>
 
                     <button onClick={() => { setDropdownOpen(false); router.push("/transactions"); }}

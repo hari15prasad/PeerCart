@@ -79,7 +79,7 @@ BEGIN
       );
     RETURN true;
 
-  -- SELLER CONFIRMS → listing becomes Sold
+  -- SELLER CONFIRMS -> listing becomes Sold
   ELSIF action_type = 'CONFIRM_SALE' THEN
     UPDATE public.listings
       SET status = 'Sold'
@@ -106,9 +106,16 @@ BEGIN
         target_listing_id,
         v_conv_id
       );
+
+    -- Notify other interested buyers that the item is sold
+    INSERT INTO public.notifications (user_id, type, title, message, listing_id)
+      SELECT buyer_id, 'deal_rejected', '😔 Item Sold', 'Someone else bought "' || v_listing_title || '". Better luck next time!', target_listing_id
+      FROM public.interests
+      WHERE listing_id = target_listing_id AND buyer_id != target_buyer_id;
+
     RETURN true;
 
-  -- SELLER REJECTS → listing back to Available
+  -- SELLER REJECTS -> listing back to Available
   ELSIF action_type = 'REJECT_SALE' THEN
     UPDATE public.listings SET status = 'Available'
       WHERE id = target_listing_id AND status = 'Pending';
